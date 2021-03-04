@@ -49,15 +49,15 @@ func main() {
 		Handler: cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
 				secret := obj.(*v1.Secret)
-				klog.Info("Added secret/", secret.Name)
+				klog.Infof("added secret/%s - status=%s version=%s", secret.Name, secret.Labels["status"], secret.Labels["version"])
 			},
 			UpdateFunc: func(oldObj, obj interface{}) {
 				secret := obj.(*v1.Secret)
-				klog.Info("Updated secret/", secret.Name)
+				klog.Infof("updated secret/%s - status=%s version=%s", secret.Name, secret.Labels["status"], secret.Labels["version"])
 			},
 			DeleteFunc: func(obj interface{}) {
 				secret := obj.(*v1.Secret)
-				klog.Info("Deleted secret", secret.Name)
+				klog.Infof("deleted secret/%s - status=%s version=%s", secret.Name, secret.Labels["status"], secret.Labels["version"])
 			},
 		},
 	}
