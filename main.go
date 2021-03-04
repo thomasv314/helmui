@@ -2,6 +2,8 @@ package main
 
 import (
 	"flag"
+	_ "fmt"
+	"k8s.io/api/core/v1"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	_ "k8s.io/client-go/rest"
@@ -41,17 +43,21 @@ func main() {
 
 	freh := cache.FilteringResourceEventHandler{
 		FilterFunc: func(obj interface{}) bool {
-			return true
+			secret := obj.(*v1.Secret)
+			return secret.Type == "helm.sh/release.v1"
 		},
 		Handler: cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
-				klog.Info("Added obj", obj)
+				secret := obj.(*v1.Secret)
+				klog.Info("Added secret/", secret.Name)
 			},
 			UpdateFunc: func(oldObj, obj interface{}) {
-				klog.Info("Updated")
+				secret := obj.(*v1.Secret)
+				klog.Info("Updated secret/", secret.Name)
 			},
 			DeleteFunc: func(obj interface{}) {
-				klog.Info("Deleted obj", obj)
+				secret := obj.(*v1.Secret)
+				klog.Info("Deleted secret", secret.Name)
 			},
 		},
 	}
