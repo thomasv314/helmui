@@ -6,8 +6,10 @@ require (
 	github.com/deislabs/oras v0.10.1-0.20210302005037-faf2f4b1daa2 // indirect
 	helm.sh/helm/v3 v3.5.2
 	k8s.io/api v0.20.4
+	k8s.io/apimachinery v0.20.4
 	k8s.io/cli-runtime v0.20.4
 	k8s.io/client-go v0.20.4
+	k8s.io/klog v1.0.0
 	k8s.io/klog/v2 v2.4.0
 )
 
