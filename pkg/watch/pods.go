@@ -48,16 +48,13 @@ func (pw *PodWatcher) Run() {
 
 func podAdded(obj interface{}) {
 	pod := obj.(*v1core.Pod)
-	klog.Info("added pod ", pod.Name)
+	klog.Infof("pod=%s event=added", pod.Name)
 }
 
 func podUpdated(oldObj, newObj interface{}) {
 	_ = oldObj.(*v1core.Pod)
-	newPod := newObj.(*v1core.Pod)
-	klog.Info("updated pod ", newPod.Name)
-	klog.Info("pod events")
-	klog.Info(newPod.Status)
-	klog.Info("---")
+	pod := newObj.(*v1core.Pod)
+	klog.Infof("pod=%s event=updated msg=%s", pod.Name, pod.Status.Message)
 }
 
 func podDeleted(obj interface{}) {
