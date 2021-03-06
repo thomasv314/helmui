@@ -61,7 +61,9 @@ func helmSecretAdded(obj interface{}) {
 					deployment := obj.(*v1apps.Deployment)
 					klog.Infof("deployment/%s selector:%s", deployment.Name, deployment.Spec.Selector.MatchLabels)
 					podSelector, _ := metav1.LabelSelectorAsSelector(deployment.Spec.Selector)
-					WatchPods(podSelector)
+
+					pw := NewPodWatcher(podSelector)
+					pw.Run()
 				case *v1core.Service:
 					service := obj.(*v1core.Service)
 					klog.Infof("service/%s", service.Name)

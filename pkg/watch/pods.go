@@ -3,28 +3,33 @@ package watch
 import (
 	"time"
 
-	"github.com/prometheus/common/log"
 	v1core "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/klog"
 )
 
 type PodWatcher struct {
-	informerFactory *cache.SharedIndexInformer
+	informerFactory informers.SharedInformerFactory
 	labels          labels.Selector
 }
 
-func NewPodWatcher(selector labels.Selector) PodWatcher {
-	return *PodWatcher{
+func NewPodWatcher(selector labels.Selector) *PodWatcher {
+	return &PodWatcher{
 		informerFactory: informers.NewSharedInformerFactory(client, defaultResync),
-		labels:          labels,
+		labels:          selector,
 	}
 }
 
 func (pw *PodWatcher) Run() {
+	klog.Info("Running pod watcher")
+
 	freh := cache.FilteringResourceEventHandler{
-		FilterFunc: filterPods,
+		FilterFunc: func(obj interface{}) bool {
+			pod := obj.(*v1core.Pod)
+			return pw.labels.Matches(labels.Set(pod.Labels))
+		},
 		Handler: cache.ResourceEventHandlerFuncs{
 			AddFunc:    podAdded,
 			UpdateFunc: podUpdated,
@@ -41,26 +46,21 @@ func (pw *PodWatcher) Run() {
 	}
 }
 
-func filterPods(obj interface{}) bool {
-	pod := obj.(*v1core.Pod)
-	return selector.Matches(labels.Set(pod.Labels))
-}
-
 func podAdded(obj interface{}) {
 	pod := obj.(*v1core.Pod)
-	log.Info("added pod ", pod.Name)
+	klog.Info("added pod ", pod.Name)
 }
 
 func podUpdated(oldObj, newObj interface{}) {
 	_ = oldObj.(*v1core.Pod)
 	newPod := newObj.(*v1core.Pod)
-	log.Info("updated pod ", newPod.Name)
-	log.Info("pod events")
-	log.Info(newPod.Status)
-	log.Info("---")
+	klog.Info("updated pod ", newPod.Name)
+	klog.Info("pod events")
+	klog.Info(newPod.Status)
+	klog.Info("---")
 }
 
 func podDeleted(obj interface{}) {
 	pod := obj.(*v1core.Pod)
-	log.Info("deleted pod ", pod.Name)
+	klog.Info("deleted pod ", pod.Name)
 }
