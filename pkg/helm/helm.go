@@ -59,7 +59,7 @@ func GetReleaseObjects(name string) (objects []interface{}, err error) {
 		obj, _, decodeErr := deserializer.Decode([]byte(files[i]), nil, nil)
 
 		if decodeErr != nil {
-			klog.Infof("decode error: %s", decodeErr)
+			klog.V(6).Infof("decode error: %s", decodeErr)
 			continue
 		}
 

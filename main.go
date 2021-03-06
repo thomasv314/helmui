@@ -35,5 +35,7 @@ func main() {
 
 	helm.Init()
 	watch.Init(config)
-	watch.WatchSecretsForHelmReleases()
+
+	releaseWatcher := watch.NewReleaseWatcher()
+	releaseWatcher.Run()
 }

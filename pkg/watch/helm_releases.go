@@ -12,6 +12,36 @@ import (
 	"k8s.io/klog"
 )
 
+type ReleaseWatcher struct {
+	informerFactory *cache.SharedIndexInformer
+}
+
+func NewReleaseWatcher() ReleaseWatcher {
+	return *ReleaseWatcher{
+		informerFactory: informers.NewSharedInformerFactory(client, defaultResync),
+	}
+}
+
+func (rw *ReleaseWatcher) Run() {
+	freh := cache.FilteringResourceEventHandler{
+		FilterFunc: helmSecretFilter,
+		Handler: cache.ResourceEventHandlerFuncs{
+			AddFunc:    helmSecretAdded,
+			UpdateFunc: helmSecretUpdated,
+			DeleteFunc: helmSecretDeleted,
+		},
+	}
+
+	klog.Info("Watching for releases (k8s secrets)")
+	informer := rw.informerFactory.Core().V1().Secrets().Informer()
+	informer.AddEventHandler(&freh)
+	stop := make(chan struct{})
+	go informer.Run(stop)
+	for {
+		time.Sleep(time.Second)
+	}
+}
+
 func helmSecretAdded(obj interface{}) {
 	secret := obj.(*v1core.Secret)
 	klog.V(2).Infof("added secret/%s - status=%s release=%s", secret.Name, secret.Labels["status"], secret.Labels["version"])
@@ -25,7 +55,18 @@ func helmSecretAdded(obj interface{}) {
 		if err != nil {
 			klog.Errorf("Error getting release objects: %e", err)
 		} else {
-			WatchHelmReleaseObjects(objects)
+			for _, obj := range objects {
+				switch obj.(type) {
+				case *v1apps.Deployment:
+					deployment := obj.(*v1apps.Deployment)
+					klog.Infof("deployment/%s selector:%s", deployment.Name, deployment.Spec.Selector.MatchLabels)
+					podSelector, _ := metav1.LabelSelectorAsSelector(deployment.Spec.Selector)
+					WatchPods(podSelector)
+				case *v1core.Service:
+					service := obj.(*v1core.Service)
+					klog.Infof("service/%s", service.Name)
+				}
+			}
 		}
 	}
 }
@@ -43,45 +84,4 @@ func helmSecretDeleted(obj interface{}) {
 func helmSecretFilter(obj interface{}) bool {
 	secret := obj.(*v1core.Secret)
 	return secret.Type == "helm.sh/release.v1"
-}
-
-// Watch for changes to Helm Release secrets
-func WatchSecretsForHelmReleases() {
-	freh := cache.FilteringResourceEventHandler{
-		FilterFunc: helmSecretFilter,
-		Handler: cache.ResourceEventHandlerFuncs{
-			AddFunc:    helmSecretAdded,
-			UpdateFunc: helmSecretUpdated,
-			DeleteFunc: helmSecretDeleted,
-		},
-	}
-
-	klog.Info("Watching for releases (k8s secrets)")
-
-	coreInformers := informers.NewSharedInformerFactory(client, defaultResync)
-	informer := coreInformers.Core().V1().Secrets().Informer()
-	informer.AddEventHandler(&freh)
-
-	stop := make(chan struct{})
-	go informer.Run(stop)
-	for {
-		time.Sleep(time.Second)
-	}
-}
-
-func WatchHelmReleaseObjects(objects []interface{}) {
-	klog.Info("Got release")
-
-	for _, obj := range objects {
-		switch obj.(type) {
-		case *v1apps.Deployment:
-			deployment := obj.(*v1apps.Deployment)
-			klog.Infof("deployment/%s selector:%s", deployment.Name, deployment.Spec.Selector.MatchLabels)
-			podSelector, _ := metav1.LabelSelectorAsSelector(deployment.Spec.Selector)
-			WatchPods(podSelector)
-		case *v1core.Service:
-			service := obj.(*v1core.Service)
-			klog.Infof("service/%s", service.Name)
-		}
-	}
 }
