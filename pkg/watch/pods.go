@@ -3,23 +3,22 @@ package watch
 import (
 	"time"
 
+	"github.com/prometheus/common/log"
 	v1core "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/tools/cache"
-	"k8s.io/xlog/v2"
-	"k8s.io/xlog/v2/xlogr"
 )
 
 type PodWatcher struct {
 	informerFactory *cache.SharedIndexInformer
-	labels labels.Selector
+	labels          labels.Selector
 }
 
 func NewPodWatcher(selector labels.Selector) PodWatcher {
 	return *PodWatcher{
 		informerFactory: informers.NewSharedInformerFactory(client, defaultResync),
-		labels: labels
+		labels:          labels,
 	}
 }
 
@@ -27,7 +26,7 @@ func (pw *PodWatcher) Run() {
 	freh := cache.FilteringResourceEventHandler{
 		FilterFunc: filterPods,
 		Handler: cache.ResourceEventHandlerFuncs{
-			AddFunc: podAdded,
+			AddFunc:    podAdded,
 			UpdateFunc: podUpdated,
 			DeleteFunc: podDeleted,
 		},

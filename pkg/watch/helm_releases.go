@@ -13,11 +13,11 @@ import (
 )
 
 type ReleaseWatcher struct {
-	informerFactory *cache.SharedIndexInformer
+	informerFactory informers.SharedInformerFactory
 }
 
-func NewReleaseWatcher() ReleaseWatcher {
-	return *ReleaseWatcher{
+func NewReleaseWatcher() *ReleaseWatcher {
+	return &ReleaseWatcher{
 		informerFactory: informers.NewSharedInformerFactory(client, defaultResync),
 	}
 }

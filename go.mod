@@ -4,6 +4,7 @@ go 1.15
 
 require (
 	github.com/deislabs/oras v0.10.1-0.20210302005037-faf2f4b1daa2 // indirect
+	github.com/prometheus/common v0.10.0
 	helm.sh/helm/v3 v3.5.2
 	k8s.io/api v0.20.4
 	k8s.io/apimachinery v0.20.4
