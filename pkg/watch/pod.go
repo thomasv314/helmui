@@ -7,18 +7,16 @@ import (
 
 	"github.com/rs/zerolog/log"
 	v1core "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-type Pod struct {
-	v1core.Pod
-}
-
-func (p *Pod) FailedLogs(container string) string {
+func LogsForPod(pod *v1core.Pod, container string, since *metav1.Time) string {
 	opts := v1core.PodLogOptions{
-		Previous: true,
+		Container: container,
+		SinceTime: since,
 	}
 
-	req := client.CoreV1().Pods(p.Namespace).GetLogs(p.Name, &opts)
+	req := client.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &opts)
 	logs, err := req.Stream(context.TODO())
 	defer logs.Close()
 	if err != nil {

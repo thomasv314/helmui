@@ -15,8 +15,6 @@ type PodWatcher struct {
 	informerFactory informers.SharedInformerFactory
 	informer        cache.SharedIndexInformer
 	labels          labels.Selector
-
-	Pods map[string]Pod
 }
 
 func NewPodWatcher(selector labels.Selector) *PodWatcher {
@@ -27,7 +25,6 @@ func NewPodWatcher(selector labels.Selector) *PodWatcher {
 		informer:        informer,
 		informerFactory: factory,
 		labels:          selector,
-		Pods:            make(map[string]Pod, 0),
 	}
 
 	return pw
@@ -56,57 +53,31 @@ func (pw *PodWatcher) Run() {
 }
 
 func (pw *PodWatcher) podAdded(obj interface{}) {
-	k8spod := obj.(*v1core.Pod)
-	var pod Pod
-	if pod, found := pw.Pods[k8spod.Name]; !found {
-		pod = Pod{
-			Pod: *k8spod,
-		}
-		pw.Pods[pod.Name] = pod
-	}
+	pod := obj.(*v1core.Pod)
 	log.Info().Str("pod-name", pod.Name).Str("phase", string(pod.Status.Phase)).Msg("Pod added")
 }
 
 func (pw *PodWatcher) podUpdated(oldObj, newObj interface{}) {
 	_ = oldObj.(*v1core.Pod)
-	k8spod := newObj.(*v1core.Pod)
+	pod := newObj.(*v1core.Pod)
 
-	var pod Pod
-	if pod, found := pw.Pods[k8spod.Name]; !found {
-		pod = Pod{
-			Pod: *k8spod,
-		}
-		pw.Pods[pod.Name] = pod
-	}
-
-	log.Info().
+	log.Debug().
 		Str("pod-name", pod.Name).
 		Str("reason", pod.Status.Reason).
 		Str("phase", string(pod.Status.Phase)).
 		Msg("Pod updated")
 
 	for _, cs := range pod.Status.ContainerStatuses {
-		state := ""
-		if cs.State.Waiting != nil {
-			state = "waiting"
-		} else if cs.State.Running != nil {
-			state = "running"
-		} else if cs.State.Terminated != nil {
-			state = "terminated"
-		}
+		if cs.State.Terminated != nil {
+			log.Info().
+				Str("pod-name", pod.Name).
+				Str("container", cs.Name).
+				Str("status", "terminated").
+				Msg("Detected terminated containers")
 
-		log.Info().
-			Str("pod-name", pod.Name).
-			Str("container", cs.Name).
-			Str("status", state).
-			Msg("Updated container")
-
-		if state == "terminated" {
-			fmt.Printf("failed logs: %s/%s", pod.Name, cs.Name)
-			fmt.Println(pod.FailedLogs(cs.Name))
+			fmt.Println(LogsForPod(pod, cs.Name, &cs.State.Terminated.StartedAt))
 		}
 	}
-	//	fmt.Println(pod.Status.ContainerStatuses[0])
 }
 
 func (pw *PodWatcher) podDeleted(obj interface{}) {
