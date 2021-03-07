@@ -20,13 +20,13 @@ var (
 	settings     *cli.EnvSettings
 )
 
-func Init() {
+func Init(helmDriver string) {
 	klog.V(6).Infof("init helm client")
 
 	settings = cli.New()
 	actionConfig = new(action.Configuration)
 
-	if err := actionConfig.Init(settings.RESTClientGetter(), "", os.Getenv("HELM_DRIVER"), log.Printf); err != nil {
+	if err := actionConfig.Init(settings.RESTClientGetter(), "", helmDriver, log.Printf); err != nil {
 		os.Exit(1)
 		klog.Error(err)
 	}

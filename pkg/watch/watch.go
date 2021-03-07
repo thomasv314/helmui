@@ -4,7 +4,6 @@ import (
 	"time"
 
 	"github.com/rs/zerolog/log"
-	"github.com/thomasv314/helmui/pkg/helm"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 )
@@ -22,5 +21,4 @@ func Init(config *rest.Config) {
 	if err != nil {
 		panic(err.Error())
 	}
-	helm.Init()
 }

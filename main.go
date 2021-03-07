@@ -2,7 +2,7 @@ package main
 
 import (
 	"flag"
-	_ "fmt"
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -22,7 +22,6 @@ func main() {
 	var err error
 
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
-	log.Info().Msg("Starting helmui")
 
 	if home := homedir.HomeDir(); home != "" {
 		kubeconfig = flag.String("kubeconfig", filepath.Join(home, ".kube", "config"), "(optional) absolute path to the kubeconfig file")
@@ -38,11 +37,26 @@ func main() {
 		panic(err.Error())
 	}
 
-	helm.Init()
+	helmDriver := os.Getenv("HELM_DRIVER")
+
+	var chosenDriver string
+	if helmDriver == "" {
+		chosenDriver = watch.SecretStoreType
+	} else {
+		if helmDriver == watch.SecretStoreType || helmDriver == watch.ConfigMapStoreType {
+			chosenDriver = helmDriver
+		} else {
+			panic(fmt.Errorf("helm driver not supported: %s", helmDriver))
+		}
+	}
+
+	log.Info().Str("release-driver", chosenDriver).Msg("Starting helmui")
+
+	helm.Init(chosenDriver)
 	watch.Init(config)
 
 	stopCh := make(chan struct{})
-	releaseWatcher := watch.NewReleaseWatcher()
+	releaseWatcher := watch.NewReleaseWatcher(chosenDriver)
 	releaseWatcher.Run(stopCh)
 	for {
 		time.Sleep(time.Second)

@@ -7,21 +7,52 @@ import (
 	"github.com/thomasv314/helmui/pkg/helm"
 	v1apps "k8s.io/api/apps/v1"
 	v1core "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/informers"
 
 	"k8s.io/client-go/tools/cache"
 )
 
 type ReleaseWatcher struct {
+	Releases map[string]Release
+
+	storeType   string
+	podWatchers PodWatcher
+
 	informerFactory informers.SharedInformerFactory
 	informer        cache.SharedIndexInformer
 }
 
-func NewReleaseWatcher() *ReleaseWatcher {
+type ReleaseMeta struct {
+	metav1.TypeMeta
+	metav1.ObjectMeta
+}
+
+type Release struct {
+	Name    string
+	Status  string
+	Version string
+}
+
+const (
+	ConfigMapStoreType = "configmap"
+	SecretStoreType    = "secret"
+)
+
+// Takes a string of either "objs" or "configmap"
+func NewReleaseWatcher(storeType string) *ReleaseWatcher {
 	factory := informers.NewSharedInformerFactory(client, defaultResync)
-	informer := factory.Core().V1().Secrets().Informer()
+
+	var informer cache.SharedIndexInformer
+	if storeType == ConfigMapStoreType {
+		informer = factory.Core().V1().ConfigMaps().Informer()
+	} else {
+		informer = factory.Core().V1().Secrets().Informer()
+	}
 
 	rw := &ReleaseWatcher{
+		Releases:        make(map[string]Release),
+		storeType:       storeType,
 		informerFactory: factory,
 		informer:        informer,
 	}
@@ -31,42 +62,74 @@ func NewReleaseWatcher() *ReleaseWatcher {
 
 func (rw *ReleaseWatcher) Run(stop chan struct{}) (err error) {
 	freh := cache.FilteringResourceEventHandler{
-		FilterFunc: helmSecretFilter,
+		FilterFunc: rw.filterRelease,
 		Handler: cache.ResourceEventHandlerFuncs{
-			AddFunc:    helmSecretAdded,
-			UpdateFunc: helmSecretUpdated,
-			DeleteFunc: helmSecretDeleted,
+			AddFunc:    rw.releaseAdded,
+			UpdateFunc: rw.releaseUpdated,
+			DeleteFunc: rw.releaseDeleted,
 		},
 	}
-
 	rw.informer.AddEventHandler(&freh)
+
 	log.Info().Msg("Watching for helm releases")
+
 	stop = make(chan struct{})
 	rw.informerFactory.Start(stop)
-	// wait for the initial synchronization of the local cache.
 	if !cache.WaitForCacheSync(stop, rw.informer.HasSynced) {
-		return fmt.Errorf("Failed to sync")
+		return fmt.Errorf("WaitForCacheSync failed")
 	}
+
 	return
 }
 
-func helmSecretAdded(obj interface{}) {
-	secret := obj.(*v1core.Secret)
+func (rw *ReleaseWatcher) getObjectMeta(obj interface{}) (releaseMeta ReleaseMeta) {
+	releaseMeta = ReleaseMeta{}
+	if rw.storeType == ConfigMapStoreType {
+		cm := obj.(*v1core.ConfigMap)
+		return ReleaseMeta{
+			ObjectMeta: cm.ObjectMeta,
+			TypeMeta:   cm.TypeMeta,
+		}
+	} else {
+		sec := obj.(*v1core.Secret)
+		return ReleaseMeta{
+			ObjectMeta: sec.ObjectMeta,
+			TypeMeta:   sec.TypeMeta,
+		}
+	}
+}
+
+func (rw *ReleaseWatcher) releaseAdded(obj interface{}) {
+	meta := rw.getObjectMeta(obj)
 
 	sublogger := log.With().
-		Str("name", secret.Labels["name"]).
+		Str("name", meta.Name).
+		Str("release-name", meta.Labels["name"]).
+		Int("release-count", len(rw.Releases)).
+		Str("release-status", meta.Labels["status"]).
 		Logger()
 
 	sublogger.Debug().
-		Str("type", string(secret.Type)).
-		Msg("Secret added")
+		Str("type", string(meta.TypeMeta.Kind)).
+		Msg("Release added")
 
-	if secret.Labels["status"] == "pending-upgrade" {
-		sublogger.Info().
-			Str("version", secret.Labels["version"]).
-			Msg("Release detected")
+	if meta.Labels["status"] == "pending-upgrade" {
+		if release, found := rw.Releases[meta.Labels["name"]]; !found {
+			release = Release{
+				Name:    meta.Labels["name"],
+				Status:  meta.Labels["status"],
+				Version: meta.Labels["version"],
+			}
 
-		objects, err := helm.GetReleaseObjects(secret.Labels["name"])
+			rw.Releases[release.Name] = release
+
+			sublogger.Info().
+				Str("version", meta.Labels["version"]).
+				Int("release-count", len(rw.Releases)).
+				Msg("Release detected.")
+		}
+
+		objects, err := helm.GetReleaseObjects(meta.Labels["name"])
 
 		if err != nil {
 			sublogger.Error().Err(err).Msg("Error getting release objects")
@@ -76,9 +139,9 @@ func helmSecretAdded(obj interface{}) {
 				case *v1apps.Deployment:
 					deployment := obj.(*v1apps.Deployment)
 					log.Info().Str("name", deployment.Name).Msg("Deployment detected")
-					//					podSelector, _ := metav1.LabelSelectorAsSelector(deployment.Spec.Selector)
-					//					pw := NewPodWatcher(podSelector)
-					//					pw.Run()
+					podSelector, _ := metav1.LabelSelectorAsSelector(deployment.Spec.Selector)
+					pw := NewPodWatcher(podSelector)
+					go pw.Run()
 				case *v1core.Service:
 					service := obj.(*v1core.Service)
 					log.Info().Str("name", service.Name).Msg("Service detected")
@@ -88,31 +151,29 @@ func helmSecretAdded(obj interface{}) {
 	}
 }
 
-func helmSecretUpdated(oldObj, obj interface{}) {
-	secret := obj.(*v1core.Secret)
+func (rw *ReleaseWatcher) releaseUpdated(oldObj, obj interface{}) {
+	meta := rw.getObjectMeta(obj)
 	log.Debug().
-		Str("name", secret.Name).
-		Str("version", secret.Labels["version"]).
-		Str("status", secret.Labels["status"]).
+		Str("name", meta.Name).
+		Str("version", meta.Labels["version"]).
+		Str("status", meta.Labels["status"]).
 		Msg("Release updated")
 }
 
-func helmSecretDeleted(obj interface{}) {
-	secret := obj.(*v1core.Secret)
+func (rw *ReleaseWatcher) releaseDeleted(obj interface{}) {
+	meta := rw.getObjectMeta(obj)
 	log.Debug().
-		Str("name", secret.Name).
-		Str("version", secret.Labels["version"]).
-		Str("status", secret.Labels["status"]).
+		Str("name", meta.Name).
+		Str("version", meta.Labels["version"]).
+		Str("status", meta.Labels["status"]).
 		Msg("Release deleted")
 }
 
-func helmSecretFilter(obj interface{}) bool {
-	secret := obj.(*v1core.Secret)
+func (rw *ReleaseWatcher) filterRelease(obj interface{}) bool {
+	meta := rw.getObjectMeta(obj)
 
-	if secret.Type == "helm.sh/release.v1" {
-		if secret.Labels["status"] == "superseded" {
-			return false
-		} else {
+	for _, mf := range meta.ManagedFields {
+		if mf.Manager == "helm" {
 			return true
 		}
 	}
