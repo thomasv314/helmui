@@ -11,18 +11,24 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/thomasv314/helmui/pkg/helm"
 	"github.com/thomasv314/helmui/pkg/watch"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/homedir"
 )
 
-func main() {
-	var kubeconfig *string
-	var config *rest.Config
-	var err error
+var (
+	kubeconfig *string
+	err        error
+	config     *rest.Config
+	client     *kubernetes.Clientset
+)
 
+func main() {
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
 
+	debug := flag.Bool("debug", false, "sets log level to debug")
+	// Init the Kubeconfig
 	if home := homedir.HomeDir(); home != "" {
 		kubeconfig = flag.String("kubeconfig", filepath.Join(home, ".kube", "config"), "(optional) absolute path to the kubeconfig file")
 	} else {
@@ -30,9 +36,21 @@ func main() {
 	}
 
 	config, err = clientcmd.BuildConfigFromFlags("", *kubeconfig)
-
 	flag.Parse()
 
+	zerolog.SetGlobalLevel(zerolog.InfoLevel)
+	if *debug {
+		zerolog.SetGlobalLevel(zerolog.DebugLevel)
+		log.Info().Msg("Setting debug")
+	}
+
+	if err != nil {
+		panic(err.Error())
+	}
+
+	// Init a k8s + helm client
+	// TODO: helm client doesnt currently init from kubeconfig in this code block, uses default
+	client, err = kubernetes.NewForConfig(config)
 	if err != nil {
 		panic(err.Error())
 	}
@@ -53,10 +71,9 @@ func main() {
 	log.Info().Str("release-driver", chosenDriver).Msg("Starting helmui")
 
 	helm.Init(chosenDriver)
-	watch.Init(config)
 
 	stopCh := make(chan struct{})
-	releaseWatcher := watch.NewReleaseWatcher(chosenDriver)
+	releaseWatcher := watch.NewReleaseWatcher(client, chosenDriver)
 	releaseWatcher.Run(stopCh)
 	for {
 		time.Sleep(time.Second)

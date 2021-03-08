@@ -1,24 +1,7 @@
 package watch
 
-import (
-	"time"
+import "time"
 
-	"github.com/rs/zerolog/log"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
+const (
+	DefaultResync = time.Duration(0)
 )
-
-var (
-	defaultResync time.Duration = 0
-	client        *kubernetes.Clientset
-)
-
-func Init(config *rest.Config) {
-	log.Debug().Msg("Init kubernetes client")
-
-	var err error
-	client, err = kubernetes.NewForConfig(config)
-	if err != nil {
-		panic(err.Error())
-	}
-}

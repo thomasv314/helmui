@@ -1,27 +1,34 @@
 package watch
 
 import (
+	"bytes"
+	"context"
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/rs/zerolog/log"
 	v1core "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/informers"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
 )
 
 type PodWatcher struct {
+	client          *kubernetes.Clientset
 	informerFactory informers.SharedInformerFactory
 	informer        cache.SharedIndexInformer
 	labels          labels.Selector
 }
 
-func NewPodWatcher(selector labels.Selector) *PodWatcher {
-	factory := informers.NewSharedInformerFactory(client, defaultResync)
+func NewPodWatcher(client *kubernetes.Clientset, selector labels.Selector) *PodWatcher {
+	factory := informers.NewSharedInformerFactory(client, DefaultResync)
 	informer := factory.Core().V1().Pods().Informer()
 
 	pw := &PodWatcher{
+		client:          client,
 		informer:        informer,
 		informerFactory: factory,
 		labels:          selector,
@@ -52,6 +59,30 @@ func (pw *PodWatcher) Run() {
 	}
 }
 
+func (pw *PodWatcher) LogsForPod(pod *v1core.Pod, container string, since *metav1.Time) string {
+	opts := v1core.PodLogOptions{
+		Container: container,
+		SinceTime: since,
+	}
+
+	req := pw.client.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &opts)
+	logs, err := req.Stream(context.TODO())
+	defer logs.Close()
+	if err != nil {
+		log.Error().Err(err).Msg("Error opening container log stream")
+		return "error opening stream"
+	}
+
+	buf := new(bytes.Buffer)
+	_, err = io.Copy(buf, logs)
+	if err != nil {
+		return "error in copy information from podLogs to buf"
+	}
+	str := buf.String()
+
+	return str
+}
+
 func (pw *PodWatcher) podAdded(obj interface{}) {
 	pod := obj.(*v1core.Pod)
 	log.Info().Str("pod-name", pod.Name).Str("phase", string(pod.Status.Phase)).Msg("Pod added")
@@ -75,7 +106,7 @@ func (pw *PodWatcher) podUpdated(oldObj, newObj interface{}) {
 				Str("status", "terminated").
 				Msg("Detected terminated containers")
 
-			fmt.Println(LogsForPod(pod, cs.Name, &cs.State.Terminated.StartedAt))
+			fmt.Println(pw.LogsForPod(pod, cs.Name, &cs.State.Terminated.StartedAt))
 		}
 	}
 }
