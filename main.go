@@ -9,16 +9,11 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/thomasv314/helmui/pkg/watch"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
 )
 
 var (
-	kubeconfig   *string
 	chosenDriver string
 	err          error
-	config       *rest.Config
-	client       *kubernetes.Clientset
 )
 
 func main() {
