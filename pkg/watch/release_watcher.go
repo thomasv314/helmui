@@ -4,12 +4,10 @@ import (
 	"fmt"
 
 	"github.com/rs/zerolog/log"
-	"github.com/thomasv314/helmui/pkg/helm"
 	v1apps "k8s.io/api/apps/v1"
 	v1core "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/informers"
-	"k8s.io/client-go/kubernetes"
 
 	"k8s.io/client-go/tools/cache"
 )
@@ -17,8 +15,6 @@ import (
 type ReleaseWatcher struct {
 	Releases map[string]*Release
 
-	client      *kubernetes.Clientset
-	storeType   string
 	podWatchers PodWatcher
 
 	informerFactory informers.SharedInformerFactory
@@ -36,20 +32,19 @@ const (
 )
 
 // Takes a string of either "objs" or "configmap"
-func NewReleaseWatcher(client *kubernetes.Clientset, storeType string) *ReleaseWatcher {
-	factory := informers.NewSharedInformerFactory(client, DefaultResync)
+func NewReleaseWatcher() *ReleaseWatcher {
+	factory := informers.NewSharedInformerFactory(clientset, DefaultResync)
 
 	var informer cache.SharedIndexInformer
-	if storeType == ConfigMapStoreType {
+
+	if driverType == ConfigMapStoreType {
 		informer = factory.Core().V1().ConfigMaps().Informer()
 	} else {
 		informer = factory.Core().V1().Secrets().Informer()
 	}
 
 	rw := &ReleaseWatcher{
-		client:          client,
 		Releases:        make(map[string]*Release),
-		storeType:       storeType,
 		informerFactory: factory,
 		informer:        informer,
 	}
@@ -81,7 +76,7 @@ func (rw *ReleaseWatcher) Run(stop chan struct{}) (err error) {
 
 func (rw *ReleaseWatcher) releaseAdded(obj interface{}) {
 	var release *Release
-	currentRelease := ReleaseFromObject(rw.storeType, obj)
+	currentRelease := ReleaseFromObject(driverType, obj)
 	if _, found := rw.Releases[currentRelease.Name()]; found {
 		release = rw.Releases[currentRelease.Name()]
 	} else {
@@ -93,7 +88,7 @@ func (rw *ReleaseWatcher) releaseAdded(obj interface{}) {
 	sublogger.Debug().Msg("ReleaseAdded")
 
 	if release.Status() == "pending-upgrade" {
-		objects, err := helm.GetReleaseObjects(release.Name())
+		objects, err := helmClient.GetReleaseObjects(release.Name())
 		if err != nil {
 			sublogger.Error().Err(err).Msg("Error getting release objects")
 		} else {
@@ -103,7 +98,7 @@ func (rw *ReleaseWatcher) releaseAdded(obj interface{}) {
 					deployment := obj.(*v1apps.Deployment)
 					log.Info().Str("name", deployment.Name).Msg("Deployment detected")
 					podSelector, _ := metav1.LabelSelectorAsSelector(deployment.Spec.Selector)
-					pw := NewPodWatcher(rw.client, podSelector)
+					pw := NewPodWatcher(podSelector)
 					go pw.Run()
 				case *v1core.Service:
 					service := obj.(*v1core.Service)
@@ -116,7 +111,7 @@ func (rw *ReleaseWatcher) releaseAdded(obj interface{}) {
 
 func (rw *ReleaseWatcher) releaseUpdated(oldObj, obj interface{}) {
 	var release *Release
-	currentRelease := ReleaseFromObject(rw.storeType, obj)
+	currentRelease := ReleaseFromObject(driverType, obj)
 	if _, found := rw.Releases[currentRelease.Name()]; found {
 		release = rw.Releases[currentRelease.Name()]
 	} else {
@@ -129,7 +124,7 @@ func (rw *ReleaseWatcher) releaseUpdated(oldObj, obj interface{}) {
 
 func (rw *ReleaseWatcher) releaseDeleted(obj interface{}) {
 	var release *Release
-	currentRelease := ReleaseFromObject(rw.storeType, obj)
+	currentRelease := ReleaseFromObject(driverType, obj)
 	if _, found := rw.Releases[currentRelease.Name()]; found {
 		release = rw.Releases[currentRelease.Name()]
 	} else {
@@ -141,7 +136,7 @@ func (rw *ReleaseWatcher) releaseDeleted(obj interface{}) {
 }
 
 func (rw *ReleaseWatcher) filterRelease(obj interface{}) bool {
-	currentRelease := ReleaseFromObject(rw.storeType, obj)
+	currentRelease := ReleaseFromObject(driverType, obj)
 
 	for _, mf := range currentRelease.ManagedFields {
 		if mf.Manager == "helm" {

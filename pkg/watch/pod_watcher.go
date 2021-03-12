@@ -12,23 +12,20 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/informers"
-	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
 )
 
 type PodWatcher struct {
-	client          *kubernetes.Clientset
 	informerFactory informers.SharedInformerFactory
 	informer        cache.SharedIndexInformer
 	labels          labels.Selector
 }
 
-func NewPodWatcher(client *kubernetes.Clientset, selector labels.Selector) *PodWatcher {
-	factory := informers.NewSharedInformerFactory(client, DefaultResync)
+func NewPodWatcher(selector labels.Selector) *PodWatcher {
+	factory := informers.NewSharedInformerFactory(clientset, DefaultResync)
 	informer := factory.Core().V1().Pods().Informer()
 
 	pw := &PodWatcher{
-		client:          client,
 		informer:        informer,
 		informerFactory: factory,
 		labels:          selector,
@@ -65,7 +62,7 @@ func (pw *PodWatcher) LogsForPod(pod *v1core.Pod, container string, since *metav
 		SinceTime: since,
 	}
 
-	req := pw.client.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &opts)
+	req := clientset.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &opts)
 	logs, err := req.Stream(context.TODO())
 	defer logs.Close()
 	if err != nil {

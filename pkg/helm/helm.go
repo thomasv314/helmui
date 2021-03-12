@@ -1,12 +1,9 @@
 package helm
 
 import (
-	"log"
-	"os"
 	"strings"
 
 	"helm.sh/helm/v3/pkg/action"
-	"helm.sh/helm/v3/pkg/cli"
 	"helm.sh/helm/v3/pkg/release"
 	v1apps "k8s.io/api/apps/v1"
 	v1core "k8s.io/api/core/v1"
@@ -15,31 +12,24 @@ import (
 	"k8s.io/klog"
 )
 
-var (
+type HelmClient struct {
 	actionConfig *action.Configuration
-	settings     *cli.EnvSettings
-)
+}
 
-func Init(helmDriver string) {
-	klog.V(6).Infof("init helm client")
-
-	settings = cli.New()
-	actionConfig = new(action.Configuration)
-
-	if err := actionConfig.Init(settings.RESTClientGetter(), "", helmDriver, log.Printf); err != nil {
-		os.Exit(1)
-		klog.Error(err)
+func NewHelmClient(action *action.Configuration) *HelmClient {
+	return &HelmClient{
+		actionConfig: action,
 	}
 }
 
-func GetRelease(name string) (release *release.Release, err error) {
-	status := action.NewStatus(actionConfig)
-	release, err = status.Run(name)
+func (hc *HelmClient) GetRelease(releaseName string) (release *release.Release, err error) {
+	status := action.NewStatus(hc.actionConfig)
+	release, err = status.Run(releaseName)
 	return
 }
 
-func GetReleaseObjects(name string) (objects []interface{}, err error) {
-	release, err := GetRelease(name)
+func (hc *HelmClient) GetReleaseObjects(name string) (objects []interface{}, err error) {
+	release, err := hc.GetRelease(name)
 
 	if err != nil {
 		return
@@ -67,5 +57,4 @@ func GetReleaseObjects(name string) (objects []interface{}, err error) {
 	}
 
 	return
-
 }
